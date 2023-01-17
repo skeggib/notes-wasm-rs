@@ -1,12 +1,12 @@
-use notify::{Error, Event, Watcher};
+use notify::{Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{create_dir, read, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver};
 use std::{fmt, fs::remove_dir_all, process::exit};
 use std::{str, thread};
 use string_join::display::Join;
