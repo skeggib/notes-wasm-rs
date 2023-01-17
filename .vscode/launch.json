@@ -1,0 +1,49 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'notes-linux-files'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=notes-linux-files",
+                    "--package=notes-linux-files"
+                ],
+                "filter": {
+                    "name": "notes-linux-files",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "/root/workspace/server",
+                "server"
+            ],
+            "cwd": "${workspaceFolder}",
+            "initCommands":["settings set target.disable-aslr false"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'notes-linux-files'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=notes-linux-files",
+                    "--package=notes-linux-files"
+                ],
+                "filter": {
+                    "name": "notes-linux-files",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
