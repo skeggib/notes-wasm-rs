@@ -1,5 +1,6 @@
 pub mod model;
 
+use model::{Client, InstanceKind, SingleConnectionServer};
 use model::{Model, Note};
 
 use notify::Watcher;
@@ -14,20 +15,6 @@ use std::{fs::remove_dir_all, process::exit};
 use std::{str, thread};
 use string_join::display::Join;
 
-struct Server {
-    listener: TcpListener,
-    stream: TcpStream,
-}
-
-struct Client {
-    stream: TcpStream,
-}
-
-enum InstanceKind {
-    ServerKind(Server),
-    ClientKind(Client),
-}
-
 fn main() {
     let workspace_path_string = std::env::args()
         .nth(1)
@@ -40,41 +27,22 @@ fn main() {
     let mut workspace_path = PathBuf::new();
     workspace_path.push(workspace_path_string);
 
+    let address = "127.0.0.1:55000";
     let instance_kind = match instance_kind_string.as_str() {
-        "server" => {
-            println!("binding 127.0.0.1:55000");
-            let listener = match TcpListener::bind("127.0.0.1:55000") {
-                Ok(listener) => listener,
-                Err(error) => {
-                    eprintln!("Could not bind 127.0.0.1:55000 -> {}", error);
-                    exit(1)
-                }
-            };
-            println!("waiting for client...");
-            let stream = match listener.accept() {
-                Ok((stream, _)) => stream,
-                Err(error) => {
-                    eprintln!("Could not accept incoming connection -> {}", error);
-                    exit(1)
-                }
-            };
-
-            println!("connected");
-            InstanceKind::ServerKind(Server { listener, stream })
-        }
-        "client" => {
-            println!("connecting to 127.0.0.1:55000...");
-            let stream = match TcpStream::connect("127.0.0.1:55000") {
-                Ok(listener) => listener,
-                Err(error) => {
-                    eprintln!("Could not connect to 127.0.0.1:55000 -> {}", error);
-                    exit(1)
-                }
-            };
-
-            println!("connected");
-            InstanceKind::ClientKind(Client { stream })
-        }
+        "server" => match SingleConnectionServer::new(address) {
+            Ok(server) => InstanceKind::ServerKind(server),
+            Err(error) => {
+                eprintln!("cannot create server -> {}", error);
+                exit(1)
+            }
+        },
+        "client" => match Client::new(address) {
+            Ok(client) => InstanceKind::ClientKind(client),
+            Err(error) => {
+                eprintln!("cannot create client -> {}", error);
+                exit(1)
+            }
+        },
         _ => {
             eprintln!("invalid instance kind '{}'", instance_kind_string);
             exit(1)
@@ -88,7 +56,7 @@ fn main() {
             let model = Model::new();
 
             println!("send model to client");
-            match serde_json::to_writer(&server.stream, &model) {
+            match serde_json::to_writer(server.as_writer(), &model) {
                 Ok(_) => {}
                 Err(error) => {
                     eprintln!("cannot write model to stream -> {}", error);
@@ -136,7 +104,7 @@ fn main() {
                         Ok(updated_model) => {
                             model = updated_model;
                             println!("{}", model);
-                            match serde_json::to_writer(&server.stream, &model) {
+                            match serde_json::to_writer(server.as_writer(), &model) {
                                 Ok(_) => {}
                                 Err(error) => {
                                     eprintln!("cannot write model to stream -> {}", error);
