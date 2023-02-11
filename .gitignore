@@ -16,8 +16,5 @@ Cargo.lock
 # Added by cargo
 /target
 
-# Seed
-/dist
-
 # CLion
 /.idea

@@ -97,6 +97,12 @@ fn note_editor(note: &model::Note) -> Node<Msg> {
     ]
 }
 
-fn main() {
+// ------ ------
+//     Start
+// ------ ------
+
+// (This function is invoked by `init` function in `index.html`.)
+#[wasm_bindgen(start)]
+pub fn start() {
     App::start("app", init, update, view);
 }
