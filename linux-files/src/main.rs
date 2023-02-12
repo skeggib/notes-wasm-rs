@@ -188,23 +188,7 @@ fn init_workspace(workspace_path: &Path, model: &Model) -> Result<(), String> {
             ))
         }
     };
-    for (filename, note) in &model.notes {
-        let file_path = path.join(filename);
-        match File::create(file_path.clone()) {
-            Ok(mut file) => match writeln!(file, "{}\n\n{}", note.title, note.body) {
-                Ok(_) => (),
-                Err(error) => {
-                    return Err(format!("could not write file '{:?}': {}", file_path, error))
-                }
-            },
-            Err(error) => {
-                return Err(format!(
-                    "could not create file '{:?}': {}",
-                    file_path, error
-                ))
-            }
-        }
-    }
+    write_workspace(workspace_path, model);
     Ok(())
 }
 
@@ -212,10 +196,10 @@ fn write_workspace(workspace_path: &Path, model: &Model) -> () {
     model
         .notes
         .iter()
-        .for_each(|(path, note)| write_node(workspace_path.join(path).as_path(), note));
+        .for_each(|(path, note)| write_note(workspace_path.join(path).as_path(), note));
 }
 
-fn write_node(path: &Path, note: &Note) -> () {
+fn write_note(path: &Path, note: &Note) -> () {
     if path.exists() {
         match OpenOptions::new().write(true).open(path) {
             Ok(mut file) => match file.set_len(0) {
@@ -234,5 +218,19 @@ fn write_node(path: &Path, note: &Note) -> () {
             }
         }
     } else {
+        match File::create(path.clone()) {
+            Ok(mut file) => match writeln!(file, "{}\n\n{}", note.title, note.body) {
+                Ok(_) => (),
+                Err(error) => {
+                    println!("could not write file '{:?}': {}", path, error)
+                }
+            },
+            Err(error) => {
+                println!(
+                    "could not create file '{:?}': {}",
+                    path, error
+                )
+            }
+        }
     }
 }
