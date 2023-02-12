@@ -1,8 +1,9 @@
 pub mod model;
+pub mod networking;
 pub mod fs_watcher;
 
-use model::{Client, InstanceKind, SingleConnectionServer, Note};
-use model::{Model};
+use model::{Model, Note};
+use networking::{Client, InstanceKind, SingleConnectionServer};
 
 use fs_watcher::{watch_workspace};
 
