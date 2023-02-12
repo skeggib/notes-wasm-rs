@@ -1,13 +1,13 @@
 pub mod model;
 pub mod fs_watcher;
 
-use model::{Client, InstanceKind, SingleConnectionServer};
+use model::{Client, InstanceKind, SingleConnectionServer, Note};
 use model::{Model};
 
-use fs_watcher::{watch_workspace, update_workspace};
+use fs_watcher::{watch_workspace};
 
 use serde::Deserialize;
-use std::fs::{create_dir, File};
+use std::fs::{create_dir, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
@@ -97,7 +97,7 @@ fn main() {
     println!("watch workspace...");
     match instance_kind {
         InstanceKind::ServerKind(ref server) => {
-            match watch_workspace(&workspace_path, &model) {
+            match watch_workspace(workspace_path, model) {
                 Ok(watch_receiver) => loop {
                     match watch_receiver.recv() {
                         Ok(updated_model) => {
@@ -136,7 +136,7 @@ fn main() {
                     }
                 }
             });
-            match watch_workspace(&workspace_path, &model) {
+            match watch_workspace(workspace_path.clone(), model.clone()) {
                 Ok(watch_receiver) => loop {
                     match watch_receiver.try_recv() {
                         Ok(updated_model) => {
@@ -149,7 +149,7 @@ fn main() {
                         Ok(updated_model) => {
                             model = updated_model;
                             println!("{}", model);
-                            update_workspace(&workspace_path, &model);
+                            write_workspace(&workspace_path, &model);
                         }
                         Err(_) => {}
                     }
@@ -206,4 +206,33 @@ fn init_workspace(workspace_path: &Path, model: &Model) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn write_workspace(workspace_path: &Path, model: &Model) -> () {
+    model
+        .notes
+        .iter()
+        .for_each(|(path, note)| write_node(workspace_path.join(path).as_path(), note));
+}
+
+fn write_node(path: &Path, note: &Note) -> () {
+    if path.exists() {
+        match OpenOptions::new().write(true).open(path) {
+            Ok(mut file) => match file.set_len(0) {
+                Ok(()) => match writeln!(file, "{}\n\n{}", note.title, note.body) {
+                    Ok(_) => (),
+                    Err(error) => {
+                        eprintln!("could not write file '{:?}': {}", path, error);
+                    }
+                },
+                Err(error) => {
+                    eprintln!("could not clear file '{:?}': {}", path, error);
+                }
+            },
+            Err(error) => {
+                eprintln!("cannot update existing note -> {}", error)
+            }
+        }
+    } else {
+    }
 }
