@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::str;
-use std::{fmt, io};
+use std::{fmt};
 use string_join::Join;
 
 #[derive(Serialize, Deserialize, Clone)]
