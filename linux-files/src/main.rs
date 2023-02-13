@@ -1,19 +1,16 @@
+pub mod fs_watcher;
 pub mod model;
 pub mod networking;
-pub mod fs_watcher;
 
 use model::{Model, Note};
-use networking::{InstanceKind, SingleConnectionServer, WsClient};
+use networking::{Connection, InstanceKind};
 
-use fs_watcher::{watch_workspace};
+use fs_watcher::watch_workspace;
 
-use serde::Deserialize;
 use std::fs::{create_dir, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::channel;
 use std::{fs::remove_dir_all, process::exit};
-use std::{thread};
 
 fn main() {
     let workspace_path_string = std::env::args()
@@ -27,20 +24,18 @@ fn main() {
     let mut workspace_path = PathBuf::new();
     workspace_path.push(workspace_path_string);
 
-    let bind_address = "127.0.0.1:55000";
-    let connect_address = "ws://127.0.0.1:55000";
     let mut instance_kind = match instance_kind_string.as_str() {
-        "server" => match SingleConnectionServer::new(bind_address) {
-            Ok(server) => InstanceKind::ServerKind(server),
+        "server" => match Connection::new("127.0.0.1:55000", "ws://127.0.0.1:55001") {
+            Ok(connection) => InstanceKind::ServerKind(connection),
             Err(error) => {
-                eprintln!("cannot create server -> {}", error);
+                eprintln!("cannot open connection -> {}", error);
                 exit(1)
             }
         },
-        "client" => match WsClient::new(connect_address) {
-            Ok(client) => InstanceKind::ClientKind(client),
+        "client" => match Connection::new("127.0.0.1:55001", "ws://127.0.0.1:55000") {
+            Ok(connection) => InstanceKind::ClientKind(connection),
             Err(error) => {
-                eprintln!("cannot create client -> {}", error);
+                eprintln!("cannot open connection -> {}", error);
                 exit(1)
             }
         },
@@ -53,11 +48,11 @@ fn main() {
     // at this point, client and server are connected
 
     let mut model = match instance_kind {
-        InstanceKind::ServerKind(ref mut server) => {
+        InstanceKind::ServerKind(ref mut connection) => {
             let model = Model::new();
 
             println!("send model to client");
-            match serde_json::to_writer(server.as_writer(), &model) {
+            match connection.send(&model) {
                 Ok(_) => {}
                 Err(error) => {
                     eprintln!("cannot write model to stream -> {}", error);
@@ -67,10 +62,11 @@ fn main() {
 
             model
         }
-        InstanceKind::ClientKind(ref mut client) => {
+        InstanceKind::ClientKind(ref mut connection) => {
             println!("receive model from server");
-            let mut de = serde_json::Deserializer::from_reader(client.as_reader());
-            match Model::deserialize(&mut de) {
+            // let mut de = serde_json::Deserializer::from_reader(client.as_reader());
+            // match Model::deserialize(&mut de) {\
+            match connection.as_receiver().recv() {
                 Ok(model) => model,
                 Err(error) => {
                     eprintln!("cannot read model from stream -> {}", error);
@@ -98,14 +94,14 @@ fn main() {
 
     println!("watch workspace...");
     match instance_kind {
-        InstanceKind::ServerKind(ref mut server) => {
+        InstanceKind::ServerKind(ref mut connection) => {
             match watch_workspace(workspace_path, model) {
                 Ok(watch_receiver) => loop {
                     match watch_receiver.recv() {
                         Ok(updated_model) => {
                             model = updated_model;
                             println!("{}", model);
-                            match serde_json::to_writer(server.as_writer(), &model) {
+                            match connection.send(&model) {
                                 Ok(_) => {}
                                 Err(error) => {
                                     eprintln!("cannot write model to stream -> {}", error);
@@ -122,22 +118,8 @@ fn main() {
                 }
             };
         }
-        InstanceKind::ClientKind(mut client) => {
-            let (stream_sender, stream_receiver) = channel();
-            thread::spawn(move || loop {
-                let mut de = serde_json::Deserializer::from_reader(client.as_reader());
-                match Model::deserialize(&mut de) {
-                    Ok(model) => match stream_sender.send(model) {
-                        Ok(_) => {}
-                        Err(error) => {
-                            eprintln!("cannot send model -> {}", error);
-                        }
-                    },
-                    Err(error) => {
-                        eprintln!("cannot read model from stream -> {}", error);
-                    }
-                }
-            });
+        InstanceKind::ClientKind(ref mut connection) => {
+            let stream_receiver = connection.as_receiver();
             match watch_workspace(workspace_path.clone(), model.clone()) {
                 Ok(watch_receiver) => loop {
                     match watch_receiver.try_recv() {
@@ -228,10 +210,7 @@ fn write_note(path: &Path, note: &Note) -> () {
                 }
             },
             Err(error) => {
-                println!(
-                    "could not create file '{:?}': {}",
-                    path, error
-                )
+                println!("could not create file '{:?}': {}", path, error)
             }
         }
     }
