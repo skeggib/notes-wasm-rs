@@ -3,7 +3,7 @@ pub mod networking;
 pub mod fs_watcher;
 
 use model::{Model, Note};
-use networking::{Client, InstanceKind, SingleConnectionServer};
+use networking::{InstanceKind, SingleConnectionServer, connect};
 
 use fs_watcher::{watch_workspace};
 
@@ -27,16 +27,17 @@ fn main() {
     let mut workspace_path = PathBuf::new();
     workspace_path.push(workspace_path_string);
 
-    let address = "127.0.0.1:55000";
+    let bind_address = "127.0.0.1:55000";
+    let connect_address = "ws://127.0.0.1:55000";
     let instance_kind = match instance_kind_string.as_str() {
-        "server" => match SingleConnectionServer::new(address) {
+        "server" => match SingleConnectionServer::new(bind_address) {
             Ok(server) => InstanceKind::ServerKind(server),
             Err(error) => {
                 eprintln!("cannot create server -> {}", error);
                 exit(1)
             }
         },
-        "client" => match Client::new(address) {
+        "client" => match connect(connect_address) {
             Ok(client) => InstanceKind::ClientKind(client),
             Err(error) => {
                 eprintln!("cannot create client -> {}", error);
@@ -68,7 +69,7 @@ fn main() {
         }
         InstanceKind::ClientKind(ref client) => {
             println!("receive model from server");
-            let mut de = serde_json::Deserializer::from_reader(&client.stream);
+            let mut de = serde_json::Deserializer::from_reader(client.stream_ref());
             match Model::deserialize(&mut de) {
                 Ok(model) => model,
                 Err(error) => {
@@ -124,7 +125,7 @@ fn main() {
         InstanceKind::ClientKind(client) => {
             let (stream_sender, stream_receiver) = channel();
             thread::spawn(move || loop {
-                let mut de = serde_json::Deserializer::from_reader(&client.stream);
+                let mut de = serde_json::Deserializer::from_reader(client.stream_ref());
                 match Model::deserialize(&mut de) {
                     Ok(model) => match stream_sender.send(model) {
                         Ok(_) => {}

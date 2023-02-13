@@ -1,50 +1,50 @@
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::str;
+
+use websocket::sync::{Client, Server};
+use websocket::ClientBuilder;
 
 pub enum InstanceKind {
     ServerKind(SingleConnectionServer),
-    ClientKind(Client),
+    ClientKind(Client<TcpStream>),
 }
 
 pub struct SingleConnectionServer {
-    listener: TcpListener,
-    stream: TcpStream,
+    client: Client<TcpStream>,
 }
 
 impl SingleConnectionServer {
     /// Binds the provided address and awaits exactly one connection
     pub fn new(address: &str) -> Result<SingleConnectionServer, String> {
         println!("binding {}", address);
-        let listener = match TcpListener::bind(address) {
-            Ok(listener) => listener,
+        let mut server = match Server::bind(address) {
+            Ok(server) => server,
             Err(error) => return Err(format!("cannot bind {} -> {}", address, error)),
         };
         println!("waiting for client...");
-        let stream = match listener.accept() {
-            Ok((stream, _)) => stream,
-            Err(error) => return Err(format!("cannot accept incoming connection -> {}", error)),
+        let client = match server.accept() {
+            Ok(upgrade) => match upgrade.accept() {
+                Ok(client) => client,
+                Err(error) => return Err(format!("cannot accept upgrade request -> {:?}", error)),
+            },
+            Err(error) => return Err(format!("cannot accept incoming connection -> {:?}", error)),
         };
         println!("connected");
-        Ok(SingleConnectionServer { listener, stream })
+        Ok(SingleConnectionServer { client })
     }
 
     pub fn as_writer(self: &Self) -> &TcpStream {
-        &self.stream
+        self.client.stream_ref()
     }
 }
 
-pub struct Client {
-    pub stream: TcpStream,
-}
-
-impl Client {
-    pub fn new(address: &str) -> Result<Client, String> {
-        println!("connecting to 127.0.0.1:55000...");
-        let stream = match TcpStream::connect(address) {
-            Ok(stream) => stream,
-            Err(error) => return Err(format!("Could not connect to {} -> {}", address, error)),
-        };
-        println!("connected");
-        Ok(Client { stream })
+pub fn connect(address: &str) -> Result<Client<TcpStream>, String> {
+    println!("connecting to 127.0.0.1:55000...");
+    match ClientBuilder::new(address).unwrap().connect_insecure() {
+        Ok(client) => {
+            println!("connected");
+            Ok(client)
+        }
+        Err(error) => return Err(format!("Could not connect to {} -> {}", address, error)),
     }
 }
