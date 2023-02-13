@@ -3,7 +3,7 @@ pub mod networking;
 pub mod fs_watcher;
 
 use model::{Model, Note};
-use networking::{InstanceKind, SingleConnectionServer, connect};
+use networking::{InstanceKind, SingleConnectionServer, WsClient};
 
 use fs_watcher::{watch_workspace};
 
@@ -29,7 +29,7 @@ fn main() {
 
     let bind_address = "127.0.0.1:55000";
     let connect_address = "ws://127.0.0.1:55000";
-    let instance_kind = match instance_kind_string.as_str() {
+    let mut instance_kind = match instance_kind_string.as_str() {
         "server" => match SingleConnectionServer::new(bind_address) {
             Ok(server) => InstanceKind::ServerKind(server),
             Err(error) => {
@@ -37,7 +37,7 @@ fn main() {
                 exit(1)
             }
         },
-        "client" => match connect(connect_address) {
+        "client" => match WsClient::new(connect_address) {
             Ok(client) => InstanceKind::ClientKind(client),
             Err(error) => {
                 eprintln!("cannot create client -> {}", error);
@@ -53,7 +53,7 @@ fn main() {
     // at this point, client and server are connected
 
     let mut model = match instance_kind {
-        InstanceKind::ServerKind(ref server) => {
+        InstanceKind::ServerKind(ref mut server) => {
             let model = Model::new();
 
             println!("send model to client");
@@ -67,9 +67,9 @@ fn main() {
 
             model
         }
-        InstanceKind::ClientKind(ref client) => {
+        InstanceKind::ClientKind(ref mut client) => {
             println!("receive model from server");
-            let mut de = serde_json::Deserializer::from_reader(client.stream_ref());
+            let mut de = serde_json::Deserializer::from_reader(client.as_reader());
             match Model::deserialize(&mut de) {
                 Ok(model) => model,
                 Err(error) => {
@@ -98,7 +98,7 @@ fn main() {
 
     println!("watch workspace...");
     match instance_kind {
-        InstanceKind::ServerKind(ref server) => {
+        InstanceKind::ServerKind(ref mut server) => {
             match watch_workspace(workspace_path, model) {
                 Ok(watch_receiver) => loop {
                     match watch_receiver.recv() {
@@ -122,10 +122,10 @@ fn main() {
                 }
             };
         }
-        InstanceKind::ClientKind(client) => {
+        InstanceKind::ClientKind(mut client) => {
             let (stream_sender, stream_receiver) = channel();
             thread::spawn(move || loop {
-                let mut de = serde_json::Deserializer::from_reader(client.stream_ref());
+                let mut de = serde_json::Deserializer::from_reader(client.as_reader());
                 match Model::deserialize(&mut de) {
                     Ok(model) => match stream_sender.send(model) {
                         Ok(_) => {}

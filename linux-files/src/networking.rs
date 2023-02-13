@@ -1,15 +1,19 @@
 use std::net::TcpStream;
-use std::str;
+use std::{str, io};
 
 use websocket::sync::{Client, Server};
 use websocket::ClientBuilder;
 
 pub enum InstanceKind {
     ServerKind(SingleConnectionServer),
-    ClientKind(Client<TcpStream>),
+    ClientKind(WsClient),
 }
 
 pub struct SingleConnectionServer {
+    client: Client<TcpStream>,
+}
+
+pub struct WsClient {
     client: Client<TcpStream>,
 }
 
@@ -33,18 +37,24 @@ impl SingleConnectionServer {
         Ok(SingleConnectionServer { client })
     }
 
-    pub fn as_writer(self: &Self) -> &TcpStream {
-        self.client.stream_ref()
+    pub fn as_writer(self: &mut Self) -> &mut dyn io::Write {
+        self.client.writer_mut()
     }
 }
 
-pub fn connect(address: &str) -> Result<Client<TcpStream>, String> {
-    println!("connecting to 127.0.0.1:55000...");
-    match ClientBuilder::new(address).unwrap().connect_insecure() {
-        Ok(client) => {
-            println!("connected");
-            Ok(client)
+impl WsClient {
+    pub fn new(address: &str) -> Result<WsClient, String> {
+        println!("connecting to 127.0.0.1:55000...");
+        match ClientBuilder::new(address).unwrap().connect_insecure() {
+            Ok(client) => {
+                println!("connected");
+                Ok(WsClient { client })
+            }
+            Err(error) => return Err(format!("Could not connect to {} -> {}", address, error)),
         }
-        Err(error) => return Err(format!("Could not connect to {} -> {}", address, error)),
+    }
+
+    pub fn as_reader(self: &mut Self) -> &mut dyn io::Read {
+        self.client.reader_mut()
     }
 }
