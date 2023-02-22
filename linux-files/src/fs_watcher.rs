@@ -28,14 +28,16 @@ pub fn watch_workspace(workspace_path: PathBuf, model: Model) -> Result<Receiver
             Ok(_) => {
                 let mut current_model = model;
                 match process_events(notify_receiver, &mut |event| {
+                    println!("notify event: {:?}", event);
                     match event_handler(event, &current_model, &workspace_path) {
-                        Ok(updated_model) => {
+                        Ok(Some(updated_model)) => {
                             current_model = updated_model;
                             match watcher_sender.send(current_model.clone()) {
                                 Ok(_) => {}
                                 Err(error) => eprintln!("cannot send model: {}", error),
                             };
-                        }
+                        },
+                        Ok(None) => {}
                         Err(error) => eprintln!("cannot update model: {}", error),
                     };
                 }) {
@@ -64,9 +66,9 @@ fn process_events(receiver: Receiver<Result<Event, Error>>, callback: &mut impl 
     }
 }
 
-fn event_handler(event: Event, model: &Model, workspace_path: &PathBuf) -> Result<Model, String> {
+fn event_handler(event: Event, model: &Model, workspace_path: &PathBuf) -> Result<Option<Model>, String> {
     match event.kind {
-        notify::EventKind::Access(_) => Ok(model.clone()),
+        notify::EventKind::Access(_) => Ok(None),
         notify::EventKind::Any => todo!(),
         notify::EventKind::Create(_) => {
             let mut updated_model = model.clone();
@@ -82,10 +84,10 @@ fn event_handler(event: Event, model: &Model, workspace_path: &PathBuf) -> Resul
                     )
                     .or_insert(Note::new());
             }
-            Ok(updated_model)
+            Ok(Some(updated_model))
         }
         notify::EventKind::Modify(kind) => match kind {
-            notify::event::ModifyKind::Any => Ok(model.clone()),
+            notify::event::ModifyKind::Any => Ok(None),
             notify::event::ModifyKind::Data(_) => {
                 let mut updated_model = model.clone();
                 for path in event.paths {
@@ -107,11 +109,11 @@ fn event_handler(event: Event, model: &Model, workspace_path: &PathBuf) -> Resul
                         }
                     }
                 }
-                Ok(updated_model)
+                Ok(Some(updated_model))
             }
-            notify::event::ModifyKind::Metadata(_) => Ok(model.clone()),
+            notify::event::ModifyKind::Metadata(_) => Ok(None),
             notify::event::ModifyKind::Name(_) => todo!(),
-            notify::event::ModifyKind::Other => Ok(model.clone()),
+            notify::event::ModifyKind::Other => Ok(None),
         },
         notify::EventKind::Other => todo!(),
         notify::EventKind::Remove(_) => todo!(),
@@ -124,9 +126,13 @@ fn read_note(path: &Path) -> Result<Note, String> {
             Ok(text) => {
                 let lines: Vec<&str> = text.split("\n").collect();
                 if lines.len() > 1 {
+                    let iterator = lines.iter();
+                    let without_title = iterator.skip(1);
+                    let body_lines = without_title.skip_while(|line| line.is_empty());
+                    let body = "\n".join(body_lines);
                     Ok(Note {
                         title: lines[0].to_string(),
-                        body: "\n".join(lines.iter().skip(1).skip_while(|line| line.is_empty())),
+                        body: body,
                     })
                 } else {
                     Ok(Note {
