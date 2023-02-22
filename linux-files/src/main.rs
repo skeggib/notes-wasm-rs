@@ -181,7 +181,7 @@ fn write_note(path: &Path, note: &Note) -> () {
     if path.exists() {
         match OpenOptions::new().write(true).open(path) {
             Ok(mut file) => match file.set_len(0) {
-                Ok(()) => match writeln!(file, "{}\n\n{}", note.title, note.body) {
+                Ok(()) => match write!(file, "{}\n\n{}", note.title, note.body) {
                     Ok(_) => (),
                     Err(error) => {
                         eprintln!("could not write file '{:?}': {}", path, error);
@@ -197,7 +197,7 @@ fn write_note(path: &Path, note: &Note) -> () {
         }
     } else {
         match File::create(path.clone()) {
-            Ok(mut file) => match writeln!(file, "{}\n\n{}", note.title, note.body) {
+            Ok(mut file) => match write!(file, "{}\n\n{}", note.title, note.body) {
                 Ok(_) => (),
                 Err(error) => {
                     println!("could not write file '{:?}': {}", path, error)
