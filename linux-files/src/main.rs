@@ -3,7 +3,7 @@ pub mod model;
 pub mod networking;
 
 use model::{Model, Note};
-use networking::{Connection, InstanceKind};
+use networking::Connection;
 
 use fs_watcher::watch_workspace;
 
@@ -11,6 +11,11 @@ use std::fs::{create_dir, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{fs::remove_dir_all, process::exit};
+
+pub enum InstanceKind {
+    ServerKind,
+    ClientKind,
+}
 
 fn main() {
     let workspace_path_string = std::env::args()
@@ -24,33 +29,42 @@ fn main() {
     let mut workspace_path = PathBuf::new();
     workspace_path.push(workspace_path_string);
 
-    let mut instance_kind = match instance_kind_string.as_str() {
-        "server" => match Connection::new("127.0.0.1:55000", "ws://127.0.0.1:55001") {
-            Ok(connection) => InstanceKind::ServerKind(connection),
-            Err(error) => {
-                eprintln!("cannot open connection -> {}", error);
-                exit(1)
-            }
-        },
-        "client" => match Connection::new("127.0.0.1:55001", "ws://127.0.0.1:55000") {
-            Ok(connection) => InstanceKind::ClientKind(connection),
-            Err(error) => {
-                eprintln!("cannot open connection -> {}", error);
-                exit(1)
-            }
-        },
+    let instance_kind = match instance_kind_string.as_str() {
+        "server" => InstanceKind::ServerKind,
+        "client" => InstanceKind::ClientKind,
         _ => {
             eprintln!("invalid instance kind '{}'", instance_kind_string);
             exit(1)
         }
     };
 
-    // at this point, client and server are connected
+    // create connection
+    let connection = match instance_kind {
+        InstanceKind::ServerKind => {
+            match Connection::new("127.0.0.1:55000", "ws://127.0.0.1:55001") {
+                Ok(connection) => connection,
+                Err(error) => {
+                    eprintln!("cannot open connection -> {}", error);
+                    exit(1)
+                }
+            }
+        }
+        InstanceKind::ClientKind => {
+            match Connection::new("127.0.0.1:55001", "ws://127.0.0.1:55000") {
+                Ok(connection) => connection,
+                Err(error) => {
+                    eprintln!("cannot open connection -> {}", error);
+                    exit(1)
+                }
+            }
+        }
+    };
 
+    // server sends model to client
+    // TODO: eventually remove this code
     let mut model = match instance_kind {
-        InstanceKind::ServerKind(ref mut connection) => {
+        InstanceKind::ServerKind => {
             let model = Model::new();
-
             println!("send model to client");
             match connection.send(&model) {
                 Ok(_) => {}
@@ -62,7 +76,7 @@ fn main() {
 
             model
         }
-        InstanceKind::ClientKind(ref mut connection) => {
+        InstanceKind::ClientKind => {
             println!("receive model from server");
             // let mut de = serde_json::Deserializer::from_reader(client.as_reader());
             // match Model::deserialize(&mut de) {\
@@ -93,56 +107,36 @@ fn main() {
     };
 
     println!("watch workspace...");
-    match instance_kind {
-        InstanceKind::ServerKind(ref mut connection) => {
-            match watch_workspace(workspace_path, model) {
-                Ok(watch_receiver) => loop {
-                    match watch_receiver.recv() {
-                        Ok(updated_model) => {
-                            model = updated_model;
-                            println!("{}", model);
-                            match connection.send(&model) {
-                                Ok(_) => {}
-                                Err(error) => {
-                                    eprintln!("cannot write model to stream -> {}", error);
-                                    exit(1)
-                                }
-                            };
-                        }
-                        Err(_) => {}
-                    };
-                },
-                Err(error) => {
-                    eprintln!("cannot watch workspace -> {}", error);
-                    exit(1)
-                }
-            };
+    let watch_receiver = match watch_workspace(workspace_path.clone(), model.clone()) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            eprintln!("cannot watch workspace -> {}", error);
+            exit(1)
         }
-        InstanceKind::ClientKind(ref mut connection) => {
-            let stream_receiver = connection.as_receiver();
-            match watch_workspace(workspace_path.clone(), model.clone()) {
-                Ok(watch_receiver) => loop {
-                    match watch_receiver.try_recv() {
-                        Ok(updated_model) => {
-                            model = updated_model;
-                            println!("{}", model);
-                        }
-                        Err(_) => {}
+    };
+
+    loop {
+        match watch_receiver.try_recv() {
+            Ok(updated_model) => {
+                model = updated_model;
+                println!("{}", model);
+                match connection.send(&model) {
+                    Ok(_) => {}
+                    Err(error) => {
+                        eprintln!("cannot write model to stream -> {}", error);
+                        exit(1)
                     }
-                    match stream_receiver.try_recv() {
-                        Ok(updated_model) => {
-                            model = updated_model;
-                            println!("{}", model);
-                            write_workspace(&workspace_path, &model);
-                        }
-                        Err(_) => {}
-                    }
-                },
-                Err(error) => {
-                    eprintln!("cannot watch workspace -> {}", error);
-                    exit(1)
-                }
+                };
             }
+            Err(_) => {}
+        }
+        match connection.as_receiver().try_recv() {
+            Ok(updated_model) => {
+                model = updated_model;
+                println!("{}", model);
+                write_workspace(&workspace_path, &model);
+            }
+            Err(_) => {}
         }
     }
 }

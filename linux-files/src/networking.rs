@@ -8,11 +8,6 @@ use websocket::ClientBuilder;
 
 use crate::model::Model;
 
-pub enum InstanceKind {
-    ServerKind(Connection),
-    ClientKind(Connection),
-}
-
 pub struct Connection {
     sender: Sender<Model>,
     receiver: Receiver<Model>,
